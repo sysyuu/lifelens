@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lifelens
+      POSTGRES_PASSWORD: lifelens
+      POSTGRES_DB: lifelens
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifelens"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://lifelens:lifelens@postgres:5432/lifelens
+      DATABASE_SYNC_URL: postgresql://lifelens:lifelens@postgres:5432/lifelens
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      STORAGE_BASE_DIR: /data/storage
+      MODELGATE_API_KEY: ${MODELGATE_API_KEY:-sk-9c9604ff-8124-42fc-ad94-cd8c6995657f}
+    volumes:
+      - storage_data:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    command: celery -A server.services.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      DATABASE_URL: postgresql+asyncpg://lifelens:lifelens@postgres:5432/lifelens
+      DATABASE_SYNC_URL: postgresql://lifelens:lifelens@postgres:5432/lifelens
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      STORAGE_BASE_DIR: /data/storage
+      MODELGATE_API_KEY: ${MODELGATE_API_KEY:-sk-9c9604ff-8124-42fc-ad94-cd8c6995657f}
+    volumes:
+      - storage_data:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      REACT_APP_PROFILE_ID: ${PROFILE_ID:-}
+    depends_on:
+      - server
+
+volumes:
+  pgdata:
+  storage_data:

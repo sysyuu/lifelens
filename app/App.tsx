@@ -73,16 +73,24 @@ export default function App() {
   const [hasProfile, setHasProfile] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem('profile_id').then((id) => {
-      if (id) {
-        setProfileId(id);
-        setHasProfile(true);
-      }
-      setReady(true);
-    });
+    AsyncStorage.getItem('profile_id')
+      .then((id) => {
+        if (id) {
+          setProfileId(id);
+          setHasProfile(true);
+        }
+      })
+      .catch((err) => console.warn('AsyncStorage error:', err))
+      .finally(() => setReady(true));
   }, []);
 
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <SafeAreaProvider>
+        <Text style={{ marginTop: 100, textAlign: 'center' }}>加载中...</Text>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <SafeAreaProvider>

@@ -6,7 +6,7 @@ const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
 const api = axios.create({ baseURL: API_BASE });
 
 // Default profile ID for V1 (single user)
-const PROFILE_ID = process.env.REACT_APP_PROFILE_ID || '';
+const PROFILE_ID = process.env.REACT_APP_PROFILE_ID || '8e976c98-c61c-4a1c-bccd-70af3ad92b3c';
 
 export function useApi(profileId?: string) {
   const pid = profileId || PROFILE_ID;

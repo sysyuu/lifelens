@@ -57,6 +57,20 @@ async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    # Register workflow nodes (needed for debug panel rerun + config)
+    import server.workflow.nodes.video_preprocess
+    import server.workflow.nodes.visual_understanding
+    import server.workflow.nodes.speaker_diarization
+    import server.workflow.nodes.asr
+    import server.workflow.nodes.emotion_recognition
+    import server.workflow.nodes.event_structuring
+    import server.workflow.nodes.person_matching
+    import server.workflow.nodes.profile_update
+    import server.workflow.nodes.diary_generation
+    import server.workflow.nodes.media_slicing
+    import server.workflow.nodes.quality_check
+    import server.workflow.nodes.storage
+
 
 if __name__ == "__main__":
     import uvicorn

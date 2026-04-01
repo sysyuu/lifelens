@@ -102,11 +102,13 @@ class WorkflowEngine:
                     logger.warning(f"Node {node_id} not registered, skipping")
                     continue
 
-                # Gather inputs from dependencies
-                input_data = {}
-                for dep_id in step["depends_on"]:
-                    if dep_id in self._results:
-                        input_data[dep_id] = self._results[dep_id]
+                # Gather ALL previous node results so any node can access
+                # upstream data (not just direct dependencies)
+                input_data = dict(self._results)
+
+                # Inject engine context
+                input_data["_db_session"] = self.db
+                input_data["_profile_id"] = self.profile_id
 
                 # Load node config (user overrides from debug panel)
                 config = await self._load_node_config(node_id, node)
@@ -173,12 +175,23 @@ class WorkflowEngine:
         if step is None:
             raise ValueError(f"Node {node_id} not in pipeline")
 
-        # Load dependency outputs from previous node runs
+        # Load ALL node outputs from this workflow run (not just dependencies)
         input_data = {}
-        for dep_id in step["depends_on"]:
-            prev_node_run = await self._get_latest_node_run(workflow_run_id, dep_id)
-            if prev_node_run and prev_node_run.output_data:
-                input_data[dep_id] = prev_node_run.output_data
+        from sqlalchemy import select as sa_select
+        all_node_runs_result = await self.db.execute(
+            sa_select(NodeRun)
+            .where(
+                NodeRun.workflow_run_id == workflow_run_id,
+                NodeRun.status == "completed",
+            )
+        )
+        for nr in all_node_runs_result.scalars().all():
+            if nr.output_data:
+                input_data[nr.node_id] = nr.output_data
+
+        # Inject engine context
+        input_data["_db_session"] = self.db
+        input_data["_profile_id"] = self.profile_id
 
         config = await self._load_node_config(node_id, node)
 

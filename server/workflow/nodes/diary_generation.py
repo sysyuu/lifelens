@@ -45,8 +45,23 @@ class DiaryGenerationNode(WorkflowNode):
             temperature=0.7,
         )
 
+        diary = result["data"]
+
+        # If JSON parse failed and we got raw_content, try to extract JSON
+        if "raw_content" in diary and "insight" not in diary:
+            import re
+            raw = diary["raw_content"]
+            fence_match = re.search(r'```(?:json)?\s*\n([\s\S]*?)\n\s*```', raw)
+            if fence_match:
+                raw = fence_match.group(1).strip()
+            try:
+                diary = json.loads(raw)
+                logger.info("Recovered diary JSON from raw_content")
+            except json.JSONDecodeError:
+                logger.warning("Could not parse diary from raw_content")
+
         return {
-            "diary": result["data"],
+            "diary": diary,
             "token_usage": result["token_usage"],
         }
 

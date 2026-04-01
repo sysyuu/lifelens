@@ -50,53 +50,95 @@ const PIPELINE_EDGES = [
   { source: '4.2_quality_check', target: '4.3_storage' },
 ];
 
-const statusColors: Record<string, string> = {
-  pending: '#9ca3af',
-  running: '#3b82f6',
-  completed: '#22c55e',
-  failed: '#ef4444',
-  skipped: '#d1d5db',
+// Estimated duration per node (seconds) for progress display
+const ESTIMATED_DURATION: Record<string, number> = {
+  '1.1_video_preprocess': 5,
+  '1.2_visual_understanding': 30,
+  '1.3a_speaker_diarization': 3,
+  '1.3b_asr': 3,
+  '1.3c_emotion_recognition': 3,
+  '2.1_event_structuring': 20,
+  '2.2_person_matching': 15,
+  '3.1_profile_update': 15,
+  '3.2_diary_generation': 25,
+  '4.1_media_slicing': 5,
+  '4.2_quality_check': 15,
+  '4.3_storage': 2,
+};
+
+const statusColors: Record<string, { bg: string; border: string; dot: string }> = {
+  pending: { bg: '#fff', border: '#e5e7eb', dot: '#9ca3af' },
+  running: { bg: '#eff6ff', border: '#3b82f6', dot: '#3b82f6' },
+  completed: { bg: '#f0fdf4', border: '#22c55e', dot: '#22c55e' },
+  failed: { bg: '#fef2f2', border: '#ef4444', dot: '#ef4444' },
+  skipped: { bg: '#f9fafb', border: '#d1d5db', dot: '#d1d5db' },
 };
 
 function CustomNode({ data, selected }: NodeProps) {
-  const statusColor = statusColors[data.status] || '#9ca3af';
+  const colors = statusColors[data.status] || statusColors.pending;
+  const isRunning = data.status === 'running';
 
   return (
     <div
       style={{
         padding: '10px 16px',
         borderRadius: 8,
-        border: selected ? '2px solid #3b82f6' : '1px solid #e5e7eb',
-        backgroundColor: selected ? '#eff6ff' : '#fff',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        border: `2px solid ${selected ? '#3b82f6' : colors.border}`,
+        backgroundColor: selected ? '#eff6ff' : colors.bg,
+        boxShadow: isRunning ? '0 0 12px rgba(59,130,246,0.3)' : '0 1px 3px rgba(0,0,0,0.1)',
         minWidth: 140,
         textAlign: 'center',
         cursor: 'pointer',
+        transition: 'all 0.3s ease',
       }}
     >
       <Handle type="target" position={Position.Top} style={{ background: '#999' }} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-        <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            backgroundColor: statusColor,
-          }}
-        />
+        {isRunning ? (
+          <div style={{
+            width: 10, height: 10, borderRadius: '50%',
+            border: '2px solid #93c5fd', borderTopColor: '#3b82f6',
+            animation: 'spin 1s linear infinite',
+          }} />
+        ) : (
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%',
+            backgroundColor: colors.dot,
+          }} />
+        )}
         <span style={{ fontSize: 13, fontWeight: 500 }}>{data.label}</span>
       </div>
-      {data.duration && (
-        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-          {data.duration.toFixed(1)}s
-        </div>
-      )}
+      {/* Status line */}
+      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+        {data.status === 'completed' && data.duration != null && `${data.duration.toFixed(1)}s`}
+        {data.status === 'running' && `运行中...预计${data.estimate}s`}
+        {data.status === 'pending' && data.waitingFor && `等待: ${data.waitingFor}`}
+        {data.status === 'failed' && '失败'}
+      </div>
       <Handle type="source" position={Position.Bottom} style={{ background: '#999' }} />
     </div>
   );
 }
 
 const nodeTypes = { custom: CustomNode };
+
+// Dependencies for "waiting for" display
+const NODE_DEPS: Record<string, string[]> = {
+  '1.2_visual_understanding': ['1.1_video_preprocess'],
+  '1.3a_speaker_diarization': ['1.1_video_preprocess'],
+  '1.3b_asr': ['1.3a_speaker_diarization'],
+  '1.3c_emotion_recognition': ['1.3a_speaker_diarization'],
+  '2.1_event_structuring': ['1.2_visual_understanding', '1.3b_asr', '1.3c_emotion_recognition'],
+  '2.2_person_matching': ['2.1_event_structuring'],
+  '3.1_profile_update': ['2.2_person_matching'],
+  '3.2_diary_generation': ['3.1_profile_update'],
+  '4.1_media_slicing': ['3.2_diary_generation'],
+  '4.2_quality_check': ['4.1_media_slicing'],
+  '4.3_storage': ['4.2_quality_check'],
+};
+
+const NODE_NAMES: Record<string, string> = {};
+PIPELINE_NODES.forEach((n) => { NODE_NAMES[n.id] = n.name; });
 
 export default function WorkflowDAG({ nodeRuns, selectedNodeId, onNodeSelect }: WorkflowDAGProps) {
   const nodeRunMap = useMemo(() => {
@@ -106,6 +148,17 @@ export default function WorkflowDAG({ nodeRuns, selectedNodeId, onNodeSelect }: 
     }
     return map;
   }, [nodeRuns]);
+
+  // Figure out what pending nodes are waiting for
+  const getWaitingFor = (nodeId: string): string => {
+    const deps = NODE_DEPS[nodeId] || [];
+    const incomplete = deps.filter((d) => {
+      const nr = nodeRunMap[d];
+      return !nr || nr.status !== 'completed';
+    });
+    if (incomplete.length === 0) return '';
+    return incomplete.map((d) => NODE_NAMES[d] || d).join(', ');
+  };
 
   const nodes: Node[] = PIPELINE_NODES.map((pn) => {
     const nr = nodeRunMap[pn.id];
@@ -118,17 +171,27 @@ export default function WorkflowDAG({ nodeRuns, selectedNodeId, onNodeSelect }: 
         label: pn.name,
         status: nr?.status || 'pending',
         duration: nr?.duration_seconds,
+        estimate: ESTIMATED_DURATION[pn.id] || 10,
+        waitingFor: getWaitingFor(pn.id),
       },
     };
   });
 
-  const edges: Edge[] = PIPELINE_EDGES.map((pe, i) => ({
-    id: `e${i}`,
-    source: pe.source,
-    target: pe.target,
-    animated: nodeRunMap[pe.source]?.status === 'running',
-    style: { stroke: '#9ca3af' },
-  }));
+  const edges: Edge[] = PIPELINE_EDGES.map((pe, i) => {
+    const sourceStatus = nodeRunMap[pe.source]?.status;
+    const targetStatus = nodeRunMap[pe.target]?.status;
+    return {
+      id: `e${i}`,
+      source: pe.source,
+      target: pe.target,
+      animated: sourceStatus === 'running' || targetStatus === 'running',
+      style: {
+        stroke: sourceStatus === 'completed' ? '#22c55e' :
+                sourceStatus === 'running' ? '#3b82f6' : '#d1d5db',
+        strokeWidth: sourceStatus === 'running' ? 2 : 1,
+      },
+    };
+  });
 
   return (
     <div style={{ width: '100%', height: '100%' }}>
@@ -145,6 +208,11 @@ export default function WorkflowDAG({ nodeRuns, selectedNodeId, onNodeSelect }: 
         <Controls />
         <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
       </ReactFlow>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

@@ -66,11 +66,19 @@ export const appApi = {
   async uploadVideo(fileUri: string, fileName: string): Promise<{ video_id: string }> {
     const formData = new FormData();
     formData.append('profile_id', PROFILE_ID);
-    formData.append('file', {
-      uri: fileUri,
-      name: fileName,
-      type: 'video/mp4',
-    } as any);
+
+    // Web: uri is a blob URL, need to fetch as Blob
+    // Native: use {uri, name, type} object
+    if (typeof window !== 'undefined' && fileUri.startsWith('blob:')) {
+      const blob = await fetch(fileUri).then((r) => r.blob());
+      formData.append('file', blob, fileName);
+    } else {
+      formData.append('file', {
+        uri: fileUri,
+        name: fileName,
+        type: 'video/mp4',
+      } as any);
+    }
 
     const res = await api.post('/api/upload/video', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

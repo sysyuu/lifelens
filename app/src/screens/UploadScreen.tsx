@@ -8,6 +8,8 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -19,6 +21,14 @@ interface SelectedVideo {
   duration?: number;
 }
 
+function showAlert(title: string, msg: string) {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n${msg}`);
+  } else {
+    Alert.alert(title, msg);
+  }
+}
+
 export default function UploadScreen() {
   const [videos, setVideos] = useState<SelectedVideo[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -28,7 +38,7 @@ export default function UploadScreen() {
   const pickVideos = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('权限不足', '请在设置中允许访问相册');
+      showAlert('权限不足', '请在设置中允许访问相册');
       return;
     }
 
@@ -55,7 +65,7 @@ export default function UploadScreen() {
 
   const handleUpload = async () => {
     if (videos.length === 0) {
-      Alert.alert('提示', '请先选择视频');
+      showAlert('提示', '请先选择视频');
       return;
     }
 
@@ -75,9 +85,9 @@ export default function UploadScreen() {
       setDone(true);
       setVideos([]);
       setUploadProgress('');
-      Alert.alert('上传成功', 'AI 正在处理你的视频，稍后可在首页查看日记');
+      showAlert('上传成功', 'AI 正在处理你的视频，稍后可在首页查看日记');
     } catch (err: any) {
-      Alert.alert('上传失败', err.message || '请检查网络连接后重试');
+      showAlert('上传失败', err.message || '请检查网络连接后重试');
       setUploadProgress('');
     }
 
@@ -157,7 +167,37 @@ export default function UploadScreen() {
         <View style={styles.doneBox}>
           <Text style={styles.doneText}>上传完成，AI 正在生成日记...</Text>
           <Text style={styles.doneSubtext}>处理完成后可在首页查看</Text>
+          <TouchableOpacity
+            style={styles.debugLink}
+            onPress={() => {
+              const url = 'http://localhost:3000';
+              if (Platform.OS === 'web') {
+                window.open(url, '_blank');
+              } else {
+                Linking.openURL(url);
+              }
+            }}
+          >
+            <Text style={styles.debugLinkText}>查看调试进度 →</Text>
+          </TouchableOpacity>
         </View>
+      )}
+
+      {/* Always show debug link when uploading */}
+      {uploading && (
+        <TouchableOpacity
+          style={styles.debugLinkInline}
+          onPress={() => {
+            const url = 'http://localhost:3000';
+            if (Platform.OS === 'web') {
+              window.open(url, '_blank');
+            } else {
+              Linking.openURL(url);
+            }
+          }}
+        >
+          <Text style={styles.debugLinkText}>查看调试进度 →</Text>
+        </TouchableOpacity>
       )}
     </SafeAreaView>
   );
@@ -206,4 +246,24 @@ const styles = StyleSheet.create({
   doneBox: { alignItems: 'center', marginTop: 32 },
   doneText: { fontSize: 16, fontWeight: '600', color: '#166534' },
   doneSubtext: { fontSize: 13, color: '#9ca3af', marginTop: 4 },
+  debugLink: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#eff6ff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  debugLinkInline: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#eff6ff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  debugLinkText: { fontSize: 14, fontWeight: '500', color: '#2563eb' },
 });

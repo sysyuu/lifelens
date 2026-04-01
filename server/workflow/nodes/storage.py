@@ -34,6 +34,27 @@ class StorageNode(WorkflowNode):
         processed_media = quality_data.get("processed_media", [])
         profile_diff = input_data.get("3.1_profile_update", {}).get("profile_diff", {})
 
+        # If diary_data has raw_content (JSON parse failed earlier), try to recover
+        if "raw_content" in diary_data and "insight" not in diary_data:
+            import re, json as _json
+            raw = diary_data["raw_content"]
+            logger.info(f"Diary has raw_content (len={len(raw)}), attempting recovery")
+            # Strip markdown fences if present
+            fence_match = re.search(r'```(?:json)?\s*\n([\s\S]*?)\n\s*```', raw)
+            if fence_match:
+                raw = fence_match.group(1).strip()
+            try:
+                diary_data = _json.loads(raw)
+                logger.info(f"Recovered diary data from raw_content, keys: {list(diary_data.keys())}")
+            except _json.JSONDecodeError:
+                # Try fixing unescaped quotes
+                try:
+                    from server.workflow.llm_client import _fix_llm_json
+                    diary_data = _json.loads(_fix_llm_json(raw))
+                    logger.info(f"Recovered diary data after JSON fix, keys: {list(diary_data.keys())}")
+                except Exception as e:
+                    logger.error(f"Could not recover diary data from raw_content: {e}")
+
         # Check quality verdict
         verdict = quality_result.get("overall_verdict", "pass")
         if verdict == "needs_revision":
@@ -47,6 +68,9 @@ class StorageNode(WorkflowNode):
         db: AsyncSession = input_data.get("_db_session")
         profile_id = input_data.get("_profile_id")
 
+        logger.info(f"Storage node input keys: {list(input_data.keys())}")
+        logger.info(f"db={db}, profile_id={profile_id}")
+
         if not db or not profile_id:
             return {
                 "status": "skipped",
@@ -56,7 +80,7 @@ class StorageNode(WorkflowNode):
 
         diary_id = await self._store_diary(db, profile_id, diary_data, processed_media)
         await self._apply_profile_updates(db, profile_id, profile_diff)
-        await db.commit()
+        await db.flush()  # flush but don't commit — engine will commit at the end
 
         return {
             "status": "completed",
@@ -77,10 +101,23 @@ class StorageNode(WorkflowNode):
                 media_map[ctx] = []
             media_map[ctx].append(pm)
 
+        # Parse diary date
+        diary_date_raw = diary_data.get("date")
+        diary_date_val = None
+        if diary_date_raw:
+            try:
+                from datetime import date as date_type
+                if isinstance(diary_date_raw, str):
+                    diary_date_val = date_type.fromisoformat(diary_date_raw)
+                else:
+                    diary_date_val = diary_date_raw
+            except (ValueError, TypeError):
+                logger.warning(f"Could not parse diary date: {diary_date_raw}")
+
         # Create diary entry
         diary = DiaryEntry(
             profile_id=profile_id,
-            diary_date=diary_data.get("date"),
+            diary_date=diary_date_val,
             insight_type=diary_data.get("insight", {}).get("type", "summary"),
             insight_text=diary_data.get("insight", {}).get("text", ""),
             happy_minutes=diary_data.get("emotion_overview", {}).get("happy_minutes", 0),
@@ -101,6 +138,7 @@ class StorageNode(WorkflowNode):
 
         db.add(diary)
         await db.flush()
+        logger.info(f"Stored diary entry id={diary.id}, date={diary.diary_date}, insight={diary.insight_type}")
 
         # Create key events
         for evt_data in diary_data.get("key_events", []):

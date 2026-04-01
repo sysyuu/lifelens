@@ -24,6 +24,57 @@ def get_client() -> AsyncOpenAI:
     return _client
 
 
+def _fix_llm_json(text: str) -> str:
+    """Attempt to fix common JSON issues from LLM output.
+
+    The most common issue is unescaped double quotes inside string values.
+    Strategy: walk through the text character by character, tracking whether
+    we are inside a JSON string. When we encounter a quote that appears to be
+    inside a string value (not a structural delimiter), escape it.
+    """
+    result = []
+    in_string = False
+    i = 0
+    n = len(text)
+
+    while i < n:
+        ch = text[i]
+
+        if ch == '\\' and in_string:
+            # Escaped character — copy both chars
+            result.append(ch)
+            if i + 1 < n:
+                i += 1
+                result.append(text[i])
+            i += 1
+            continue
+
+        if ch == '"':
+            if not in_string:
+                # Opening a string
+                in_string = True
+                result.append(ch)
+            else:
+                # We're inside a string and hit a quote.
+                # Look ahead to see if this is a structural close-quote:
+                # after it we expect optional whitespace then one of: , } ] :
+                rest = text[i + 1:].lstrip()
+                if not rest or rest[0] in (',', '}', ']', ':'):
+                    # Structural close quote
+                    in_string = False
+                    result.append(ch)
+                else:
+                    # Unescaped quote inside string — escape it
+                    result.append('\\"')
+            i += 1
+            continue
+
+        result.append(ch)
+        i += 1
+
+    return ''.join(result)
+
+
 async def chat_completion(
     model: str,
     system_prompt: str,
@@ -94,10 +145,14 @@ async def chat_completion_json(
         max_tokens=max_tokens,
     )
 
-    content = result["content"]
+    content = result["content"].strip()
 
-    # Strip markdown code fences if present
-    if content.startswith("```"):
+    # Strip markdown code fences if present (handles ```json ... ``` and ``` ... ```)
+    import re
+    fence_match = re.search(r'```(?:json)?\s*\n([\s\S]*?)\n\s*```', content)
+    if fence_match:
+        content = fence_match.group(1).strip()
+    elif content.startswith("```"):
         lines = content.split("\n")
         lines = lines[1:]  # Remove opening fence
         if lines and lines[-1].strip() == "```":
@@ -106,9 +161,15 @@ async def chat_completion_json(
 
     try:
         parsed = json.loads(content)
-    except json.JSONDecodeError:
-        logger.error(f"Failed to parse JSON from LLM response: {content[:500]}")
-        parsed = {"raw_content": content, "parse_error": True}
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON parse attempt 1 failed: {e}")
+        # Try to fix common LLM JSON issues: unescaped quotes inside strings
+        try:
+            parsed = json.loads(_fix_llm_json(content))
+            logger.info("JSON parse succeeded after fix_llm_json")
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse JSON from LLM response even after fix: {content[:500]}")
+            parsed = {"raw_content": content, "parse_error": True}
 
     return {"data": parsed, "token_usage": result["token_usage"]}
 

@@ -8,6 +8,7 @@ interface NodeDetailProps {
   workflowRunId: string | null;
   profileId: string;
   onRerun: () => void;
+  allNodeRuns?: NodeRunData[];
 }
 
 const AVAILABLE_MODELS = [
@@ -19,7 +20,36 @@ const AVAILABLE_MODELS = [
   'GPT-4.1',
 ];
 
-export default function NodeDetail({ nodeRun, nodeId, workflowRunId, profileId, onRerun }: NodeDetailProps) {
+const NODE_DESCRIPTIONS: Record<string, string> = {
+  '1.1_video_preprocess': 'FFmpeg 提取音频、生成缩略图、获取视频元数据',
+  '1.2_visual_understanding': 'Gemini 2.5 Pro 分析视频画面内容（场景、人物、活动）',
+  '1.3a_speaker_diarization': '说话人分离与声纹匹配',
+  '1.3b_asr': '语音转文字（FunASR / Whisper）',
+  '1.3c_emotion_recognition': '情绪识别（emotion2vec）',
+  '2.1_event_structuring': 'Claude Opus 将视频片段整合为连贯事件',
+  '2.2_person_matching': 'Claude Sonnet 匹配视频中的人物与社交圈',
+  '3.1_profile_update': 'Claude Opus 根据今日事件更新用户画像',
+  '3.2_diary_generation': 'Claude Opus 生成个性化日记',
+  '4.1_media_slicing': 'FFmpeg 裁剪关键帧和视频片段',
+  '4.2_quality_check': 'Claude Sonnet 检查日记质量',
+  '4.3_storage': '将日记、事件、媒体、画像更新写入数据库',
+};
+
+const NODE_DEPS: Record<string, string[]> = {
+  '1.2_visual_understanding': ['1.1_video_preprocess'],
+  '1.3a_speaker_diarization': ['1.1_video_preprocess'],
+  '1.3b_asr': ['1.3a_speaker_diarization'],
+  '1.3c_emotion_recognition': ['1.3a_speaker_diarization'],
+  '2.1_event_structuring': ['1.2_visual_understanding', '1.3b_asr', '1.3c_emotion_recognition'],
+  '2.2_person_matching': ['2.1_event_structuring'],
+  '3.1_profile_update': ['2.2_person_matching'],
+  '3.2_diary_generation': ['3.1_profile_update'],
+  '4.1_media_slicing': ['3.2_diary_generation'],
+  '4.2_quality_check': ['4.1_media_slicing'],
+  '4.3_storage': ['4.2_quality_check'],
+};
+
+export default function NodeDetail({ nodeRun, nodeId, workflowRunId, profileId, onRerun, allNodeRuns = [] }: NodeDetailProps) {
   const api = useApi(profileId);
   const [config, setConfig] = useState<NodeConfigData | null>(null);
   const [editingPrompt, setEditingPrompt] = useState('');
@@ -108,6 +138,29 @@ export default function NodeDetail({ nodeRun, nodeId, workflowRunId, profileId, 
             </span>
           )}
         </div>
+        {/* Description */}
+        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+          {NODE_DESCRIPTIONS[nodeId] || ''}
+        </div>
+        {/* Waiting info for pending nodes */}
+        {status === 'pending' && (() => {
+          const deps = NODE_DEPS[nodeId] || [];
+          const runMap: Record<string, NodeRunData> = {};
+          allNodeRuns.forEach((nr) => { runMap[nr.node_id] = nr; });
+          const incomplete = deps.filter((d) => !runMap[d] || runMap[d].status !== 'completed');
+          if (incomplete.length > 0) {
+            return (
+              <div style={{ fontSize: 12, color: '#d97706', marginTop: 6, backgroundColor: '#fffbeb', padding: '6px 10px', borderRadius: 6 }}>
+                等待上游节点完成：{incomplete.map((d) => {
+                  const nr = runMap[d];
+                  const depStatus = nr?.status || 'pending';
+                  return `${nr?.node_name || d}(${depStatus === 'running' ? '运行中' : '等待中'})`;
+                }).join('、')}
+              </div>
+            );
+          }
+          return null;
+        })()}
       </div>
 
       {/* Tabs */}

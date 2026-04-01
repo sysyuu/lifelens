@@ -56,6 +56,7 @@ export default function NodeDetail({ nodeRun, nodeId, workflowRunId, profileId, 
   const [editingModel, setEditingModel] = useState('');
   const [saving, setSaving] = useState(false);
   const [rerunning, setRerunning] = useState(false);
+  const [rerunResult, setRerunResult] = useState<'success' | 'error' | null>(null);
   const [activeTab, setActiveTab] = useState<'input' | 'output' | 'config'>('output');
 
   useEffect(() => {
@@ -85,15 +86,22 @@ export default function NodeDetail({ nodeRun, nodeId, workflowRunId, profileId, 
   };
 
   const handleRerun = async () => {
-    if (!workflowRunId) return;
+    if (!workflowRunId) {
+      alert('无法重跑：未找到 workflowRunId');
+      return;
+    }
     setRerunning(true);
+    setRerunResult(null);
     try {
       await api.rerunNode(workflowRunId, nodeId);
+      setRerunResult('success');
       onRerun();
     } catch (err) {
       console.error('Failed to rerun node:', err);
+      setRerunResult('error');
     }
     setRerunning(false);
+    setTimeout(() => setRerunResult(null), 3000);
   };
 
   const statusStyle: Record<string, { bg: string; text: string }> = {
@@ -322,6 +330,12 @@ export default function NodeDetail({ nodeRun, nodeId, workflowRunId, profileId, 
             >
               {rerunning ? '运行中...' : '重新运行此节点'}
             </button>
+            {rerunResult === 'success' && (
+              <span style={{ color: '#16a34a', fontSize: 13, marginLeft: 8 }}>✓ 重跑成功</span>
+            )}
+            {rerunResult === 'error' && (
+              <span style={{ color: '#dc2626', fontSize: 13, marginLeft: 8 }}>✕ 重跑失败</span>
+            )}
           </div>
         </div>
       )}

@@ -26,6 +26,26 @@ class MediaSlicingNode(WorkflowNode):
         diary_data = input_data.get("3.2_diary_generation", {})
         diary = diary_data.get("diary", {})
 
+        # Recover diary from raw_content if JSON parse failed upstream
+        if ("raw_content" in diary_data or "raw_content" in diary) and "key_events" not in diary:
+            raw = diary_data.get("raw_content") or diary.get("raw_content", "")
+            if raw:
+                import re, json as _json
+                logger.info(f"Diary has raw_content (len={len(raw)}), attempting recovery in 4.1")
+                fence_match = re.search(r'```(?:json)?\s*\n([\s\S]*?)\n\s*```', raw)
+                if fence_match:
+                    raw = fence_match.group(1).strip()
+                try:
+                    diary = _json.loads(raw)
+                    logger.info(f"Recovered diary from raw_content, keys: {list(diary.keys())}")
+                except _json.JSONDecodeError:
+                    try:
+                        from server.workflow.llm_client import _fix_llm_json
+                        diary = _json.loads(_fix_llm_json(raw))
+                        logger.info(f"Recovered diary after JSON fix, keys: {list(diary.keys())}")
+                    except Exception as e:
+                        logger.error(f"Could not recover diary from raw_content: {e}")
+
         # Collect all media references from diary
         media_refs = self._collect_media_refs(diary)
         logger.info(f"Collected {len(media_refs)} media references from diary")

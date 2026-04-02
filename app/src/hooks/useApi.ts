@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { DiaryListItem, DiaryEntry, UserProfile } from '../types';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 const api = axios.create({ baseURL: API_BASE });
 
 // Single user for V1

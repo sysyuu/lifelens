@@ -212,11 +212,52 @@ docker compose up --build -d
 ### 2. Pending Batch Not Processed
 - Batch `98eba46c` (20 videos) is in `pending` status — was uploaded but Celery task may not have been dispatched
 
+## Cloud Deployment (火山引擎)
+
+The backend runs on a Volcano Engine ECS instance for 24/7 availability (phone can access API without computer being on).
+
+| Item | Value |
+|------|-------|
+| **Public IP** | `14.103.43.132` |
+| **Spec** | 2C4G, 40GB SSD, 5Mbps |
+| **OS** | Ubuntu 24.04 |
+| **Region** | 华东2（上海） |
+| **SSH** | `ssh root@14.103.43.132` |
+| **Project path** | `/root/lifelens/` |
+| **API URL** | `http://14.103.43.132:8000` |
+| **Debug Panel** | `http://14.103.43.132:3000` |
+
+### Deploying Updates to Server
+```bash
+# Sync code (excludes node_modules, .git, app/, __pycache__)
+rsync -avz --exclude='node_modules' --exclude='.git' --exclude='app/' --exclude='__pycache__' --exclude='.expo' --exclude='*.pyc' -e 'ssh -o StrictHostKeyChecking=no' . root@14.103.43.132:/root/lifelens/
+
+# Rebuild and restart
+ssh root@14.103.43.132 'cd /root/lifelens && docker compose up --build -d'
+```
+
+### Security Group Ports
+- 22 (SSH), 8000 (API), 3000 (Debug Panel) — all open to 0.0.0.0/0
+
+### Docker Registry Mirrors (China)
+Configured in `/etc/docker/daemon.json`:
+- `https://docker.1ms.run`
+- `https://docker.m.daocloud.io`
+- `https://docker.1panel.live`
+- `https://hub.rat.dev`
+
+## App Configuration
+
+- API URL is configured via `app/.env` → `EXPO_PUBLIC_API_URL`
+- Currently points to cloud server: `http://14.103.43.132:8000`
+- `useApi.ts` reads from `process.env.EXPO_PUBLIC_API_URL` with fallback to `localhost:8000`
+
 ## Development Notes
 
 - Use `docker compose logs -f celery-worker` to monitor workflow execution
 - Use `docker compose logs -f server` to monitor API requests
-- The web debug panel at `http://localhost:3000` shows workflow DAG with real-time status
+- The web debug panel at `http://14.103.43.132:3000` shows workflow DAG with real-time status
 - When modifying workflow nodes, rebuild with `docker compose up --build -d server celery-worker`
 - When modifying web panel, rebuild with `docker compose up --build -d web`
-- App runs via Expo web mode: `cd app && npx expo start --web`
+- App runs via Expo: `cd app && npx expo start`
+- Local dev: Expo dev server on computer, API on cloud server — works on same WiFi or via Tailscale

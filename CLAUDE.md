@@ -246,7 +246,12 @@ docker compose up --build -d
 - Fix needed: add `NSAppTransportSecurity` exception in `app/ios/app/Info.plist` for the cloud server IP
 - Workaround: user already has a profile ID stored — can skip onboarding by going back
 
-### 3. Pending Batch Not Processed
+### 3. 火山引擎 ECS 服务器到期（待续费）
+- 服务器 `14.103.43.132` 已到期，SSH 和 HTTP 均无法访问
+- 续费后需 SSH 进入并执行 `cd /root/lifelens && docker compose up -d` 重启服务
+- App 引导页的「创建失败」问题在服务器恢复后即可解决
+
+### 4. Pending Batch Not Processed
 - Batch `98eba46c` (20 videos) is in `pending` status — was uploaded but Celery task may not have been dispatched
 
 ## Cloud Deployment (火山引擎)

@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lifelens.app"
+      "bundleIdentifier": "com.peiyinlin.lifelens"
     },
     "android": {
       "adaptiveIcon": {
@@ -32,7 +32,26 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPlistEntries": {
+              "NSAppTransportSecurity": {
+                "NSAllowsArbitraryLoads": false,
+                "NSAllowsLocalNetworking": true,
+                "NSExceptionDomains": {
+                  "14.103.43.132": {
+                    "NSExceptionAllowsInsecureHTTPLoads": true,
+                    "NSIncludesSubdomains": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     ]
   }
 }

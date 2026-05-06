@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Modal,
   Dimensions,
 } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { appApi } from '../hooks/useApi';
@@ -87,11 +88,7 @@ export default function DiaryDetailScreen() {
         {/* Insight badge */}
         <View style={[styles.insightBadgeContainer, { backgroundColor: colors.accent + '20' }]}>
           <Text style={[styles.insightBadge, { color: colors.accent }]}>
-            {diary.insight_type === 'highlight'
-              ? '✨ 今日高光'
-              : diary.insight_type === 'observation'
-                ? '👀 生活观察'
-                : '💝 温暖小结'}
+            📝 今日总结
           </Text>
         </View>
 
@@ -172,11 +169,21 @@ export default function DiaryDetailScreen() {
             <Text style={styles.modalCloseText}>✕</Text>
           </TouchableOpacity>
           {mediaModal ? (
-            <Image
-              source={{ uri: appApi.getMediaUrl(mediaModal.url) }}
-              style={styles.modalMedia}
-              resizeMode="contain"
-            />
+            mediaModal.media_type === 'video_clip' ? (
+              <Video
+                source={{ uri: appApi.getMediaUrl(mediaModal.url) }}
+                style={styles.modalMedia}
+                resizeMode={ResizeMode.CONTAIN}
+                useNativeControls
+                shouldPlay
+              />
+            ) : (
+              <Image
+                source={{ uri: appApi.getMediaUrl(mediaModal.url) }}
+                style={styles.modalMedia}
+                resizeMode="contain"
+              />
+            )
           ) : null}
         </View>
       </Modal>

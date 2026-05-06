@@ -73,15 +73,29 @@ export default function App() {
   const [hasProfile, setHasProfile] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem('profile_id')
-      .then((id) => {
+    const init = async () => {
+      try {
+        // One-time reset: force re-onboarding after app update
+        const resetVersion = '2';  // Bump this to force re-onboarding
+        const currentReset = await AsyncStorage.getItem('reset_version');
+        if (currentReset !== resetVersion) {
+          await AsyncStorage.removeItem('profile_id');
+          await AsyncStorage.setItem('reset_version', resetVersion);
+          setReady(true);
+          return;
+        }
+
+        const id = await AsyncStorage.getItem('profile_id');
         if (id) {
           setProfileId(id);
           setHasProfile(true);
         }
-      })
-      .catch((err) => console.warn('AsyncStorage error:', err))
-      .finally(() => setReady(true));
+      } catch (err) {
+        console.warn('AsyncStorage error:', err);
+      }
+      setReady(true);
+    };
+    init();
   }, []);
 
   if (!ready) {

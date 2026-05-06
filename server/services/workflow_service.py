@@ -62,17 +62,23 @@ async def _run_workflow(batch_id: str, profile_id: str):
             batch.status = "processing"
             await db.flush()
 
-            # Load video file paths
-            video_ids = batch.video_ids
+            # Load media file paths (separate videos from images)
+            all_media_ids = batch.video_ids
             result = await db.execute(
                 select(UploadedVideo).where(UploadedVideo.id.in_(
-                    [uuid.UUID(vid) for vid in video_ids]
+                    [uuid.UUID(vid) for vid in all_media_ids]
                 ))
             )
-            videos = result.scalars().all()
+            all_media = result.scalars().all()
+
+            # Separate by status: "uploaded_image" vs regular video uploads
+            videos = [m for m in all_media if m.status != "uploaded_image"]
+            images = [m for m in all_media if m.status == "uploaded_image"]
 
             video_paths = [v.file_path for v in videos]
             video_id_strs = [str(v.id) for v in videos]
+            image_paths = [img.file_path for img in images]
+            image_id_strs = [str(img.id) for img in images]
 
             # Load current profile for context
             profile_data = await _load_profile_as_dict(db, profile_uuid)
@@ -89,6 +95,8 @@ async def _run_workflow(batch_id: str, profile_id: str):
             # Inject initial data
             engine._results["video_paths"] = video_paths
             engine._results["video_ids"] = video_id_strs
+            engine._results["image_paths"] = image_paths
+            engine._results["image_ids"] = image_id_strs
             engine._results["current_profile"] = profile_data
             engine._results["recent_diaries"] = recent_diaries
             engine._results["existing_contacts"] = existing_contacts

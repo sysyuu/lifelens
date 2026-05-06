@@ -1,7 +1,7 @@
 # LifeLens 产品需求文档 (PRD)
 
-> **版本**: v1.0
-> **更新日期**: 2026-04-03
+> **版本**: v1.1
+> **更新日期**: 2026-05-06
 > **产品定位**: 基于 AI 的可穿戴相机日记系统
 
 ---
@@ -62,7 +62,11 @@ App 启动
 
 ### 2.2 引导页 (OnboardingScreen)
 
-**目的**: 首次使用时创建用户 Profile。
+**目的**: 首次使用时创建用户 Profile，并采集声纹用于视频中的说话人识别。
+
+引导页分两步：
+
+#### 步骤一：填写基本信息
 
 | 字段 | 类型 | 是否必填 | 说明 |
 |------|------|----------|------|
@@ -72,10 +76,21 @@ App 启动
 | 职业 (occupation) | 文本输入 | 选填 | 自由填写 |
 | 城市 (city) | 文本输入 | 选填 | 自由填写 |
 
-**交互逻辑**:
-- 点击「开始使用」后调用 `POST /api/profile/` 创建 Profile
-- Profile ID 存储在设备本地 (AsyncStorage)
-- 创建成功后跳转至主界面，后续打开 App 不再显示引导页
+点击「下一步：录制声纹」进入步骤二。
+
+#### 步骤二：录制声纹（可跳过）
+
+- 显示一段随机中文朗读文本（共 6 条备选，随机抽取）
+- 用户朗读文本并录音，录音期间显示计时器
+- 录音完成后可「重新录制」
+- 点击「完成并开始使用」：
+  1. 调用 `POST /api/profile/` 创建 Profile
+  2. 如有录音，调用 `POST /api/upload/voiceprint` 上传音频（非阻塞，失败不影响 Profile 创建）
+  3. 将 Profile ID 存储至 AsyncStorage
+  4. 跳转至主界面
+- 点击「跳过，直接开始」：跳过录音，仅创建 Profile
+
+**技术细节**: 录音使用 `Audio.RecordingOptionsPresets.HIGH_QUALITY`（iOS 使用 `kAudioFormatMPEG4AAC` 常量，不能使用字符串 `'aac'`）
 
 ---
 
@@ -169,19 +184,24 @@ App 启动
 
 ### 2.5 上传页 (UploadScreen)
 
-**功能**: 从手机相册选择视频并上传至服务器，触发 AI 工作流处理。
+**功能**: 按日期从手机相册批量导入照片和视频，上传至服务器触发 AI 工作流处理。
 
-#### 操作流程
+#### 两种导入模式
 
-1. **选择视频**: 点击虚线框按钮，调起系统相册选择器（支持多选）
-2. **确认列表**: 展示已选视频列表（文件名 + 时长），可单个移除
-3. **开始上传**: 点击「开始上传」按钮
-   - 逐个调用 `POST /api/upload/video` 上传每个视频文件
-   - 上传过程中显示进度文案（如「正在上传 3/10...」）
-   - 全部上传完成后调用 `POST /api/upload/batch` 创建批次并触发工作流
-4. **上传完成**: 显示成功提示框
-   - 「AI 正在处理你的视频，通常需要几分钟」
-   - 提供「查看调试进度 →」链接跳转到 Debug 面板
+**模式一：按日期导入（默认）**
+1. **选择日期**: 内置日历选择器（月视图，支持翻月，不可选未来日期）
+2. **自动扫描**: 选中日期后自动调用 `expo-media-library` 扫描当日所有照片和视频
+   - 视频时长 >60 秒的会被过滤（手机录屏/长视频，非相机片段）
+   - 过滤数量会在统计框中展示
+3. **并行上传**: CONCURRENCY=5，同时上传多个文件
+   - 照片: `POST /api/upload/image`（带 `capture_date_str`）
+   - 视频: `POST /api/upload/video`
+4. **完成**: 显示统计（X 张图片 + Y 个视频已上传，Z 个视频已过滤），自动跳转到首页
+
+**模式二：手动选择视频**
+1. 点击按钮调起系统相册选择器（expo-image-picker，仅视频）
+2. 展示已选视频列表，可单个移除
+3. 点击「开始上传」逐个上传并创建批次
 
 #### 上传 API 细节
 
@@ -192,9 +212,16 @@ App 启动
 - 服务端行为: 生成唯一文件名、保存至磁盘、用 ffprobe 提取拍摄日期
 - 返回: `{ video_id, filename, capture_date, status }`
 
+**单张图片上传** `POST /api/upload/image`:
+- Content-Type: `multipart/form-data`
+- 字段: `profile_id`, `file`, `capture_date_str` (可选，YYYY-MM-DD)
+- 支持格式: `image/jpeg`, `image/png`, `image/heic`, `image/heif`, `image/webp`
+- 服务端行为: 保存至 `frames_dir`，创建 UploadedVideo 记录（`status="uploaded_image"`）
+- 返回: `{ media_id, filename, type: "image", status }`
+
 **创建批次** `POST /api/upload/batch`:
 - Content-Type: `multipart/form-data`
-- 字段: `profile_id`, `video_ids` (逗号分隔的 UUID), `target_date` (可选)
+- 字段: `profile_id`, `video_ids` (逗号分隔的 UUID), `image_ids` (逗号分隔，可选), `target_date` (可选)
 - 服务端行为: 创建 UploadBatch 记录、通过 Celery 异步触发工作流
 - 返回: `{ batch_id, video_count, target_date, status: "processing" }`
 

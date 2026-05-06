@@ -2,7 +2,7 @@ import axios from 'axios';
 import { DiaryListItem, DiaryEntry, UserProfile } from '../types';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
-const api = axios.create({ baseURL: API_BASE });
+const api = axios.create({ baseURL: API_BASE, timeout: 300000 });
 
 // Single user for V1
 let PROFILE_ID = '';
@@ -80,21 +80,83 @@ export const appApi = {
       } as any);
     }
 
-    const res = await api.post('/api/upload/video', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const res = await api.post('/api/upload/video', formData);
     return res.data;
   },
 
-  async createBatch(videoIds: string[], targetDate?: string) {
+  async uploadImage(fileUri: string, fileName: string, captureDate?: string): Promise<{ media_id: string }> {
+    const formData = new FormData();
+    formData.append('profile_id', PROFILE_ID);
+    if (captureDate) formData.append('capture_date_str', captureDate);
+
+    if (typeof window !== 'undefined' && fileUri.startsWith('blob:')) {
+      const blob = await fetch(fileUri).then((r) => r.blob());
+      formData.append('file', blob, fileName);
+    } else {
+      const ext = fileName.split('.').pop()?.toLowerCase() || 'jpg';
+      const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
+      formData.append('file', {
+        uri: fileUri,
+        name: fileName,
+        type: mimeMap[ext] || 'image/jpeg',
+      } as any);
+    }
+
+    const res = await api.post('/api/upload/image', formData);
+    return res.data;
+  },
+
+  async createBatch(videoIds: string[], targetDate?: string, imageIds?: string[]): Promise<{ batch_id: string; video_count: number; status: string }> {
     const formData = new FormData();
     formData.append('profile_id', PROFILE_ID);
     formData.append('video_ids', videoIds.join(','));
+    if (imageIds && imageIds.length > 0) formData.append('image_ids', imageIds.join(','));
     if (targetDate) formData.append('target_date', targetDate);
 
-    const res = await api.post('/api/upload/batch', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const res = await api.post('/api/upload/batch', formData);
+    return res.data;
+  },
+
+  async getBatchStatus(batchId: string): Promise<{
+    status: string;
+    current_node: { node_id: string; node_name: string } | null;
+    completed_nodes: number;
+    total_nodes: number;
+    diary_id: string | null;
+  }> {
+    const res = await api.get(`/api/upload/batch/${batchId}/status`);
+    return res.data;
+  },
+
+  async getActiveBatches(): Promise<Array<{
+    batch_id: string;
+    video_count: number;
+    status: string;
+    current_node: { node_id: string; node_name: string } | null;
+    completed_nodes: number;
+    total_nodes: number;
+    created_at: string | null;
+  }>> {
+    const res = await api.get(`/api/upload/batches/${PROFILE_ID}/active`);
+    return res.data;
+  },
+
+  async uploadVoiceprint(fileUri: string, fileName: string): Promise<{ status: string }> {
+    const formData = new FormData();
+    formData.append('profile_id', PROFILE_ID);
+
+    if (typeof window !== 'undefined' && fileUri.startsWith('blob:')) {
+      const blob = await fetch(fileUri).then((r) => r.blob());
+      formData.append('file', blob, fileName);
+    } else {
+      formData.append('file', {
+        uri: fileUri,
+        name: fileName,
+        type: 'audio/wav',
+      } as any);
+    }
+
+    const res = await api.post('/api/upload/voiceprint', formData);
     return res.data;
   },
 

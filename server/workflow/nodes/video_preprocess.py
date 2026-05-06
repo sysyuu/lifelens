@@ -25,10 +25,10 @@ class VideoPreprocessNode(WorkflowNode):
         }
 
     async def execute(self, input_data: dict, config: dict) -> dict:
-        """Process uploaded videos: extract audio, generate thumbnails, get metadata.
+        """Process uploaded videos and images.
 
-        Input: {"video_paths": [str], "video_ids": [str]}
-        Output: {"videos": [{video_id, audio_path, thumbnail_path, duration, metadata}]}
+        Input: {"video_paths": [str], "video_ids": [str], "image_paths": [str], "image_ids": [str]}
+        Output: {"videos": [{video_id, audio_path, thumbnail_path, duration, metadata}], "images": [{image_id, image_path, status}]}
         """
         video_paths = input_data.get("video_paths", [])
         video_ids = input_data.get("video_ids", [])
@@ -47,14 +47,37 @@ class VideoPreprocessNode(WorkflowNode):
                     "error": str(e),
                 })
 
-        return {"videos": results}
+        # Pass through images (no FFmpeg processing needed)
+        image_paths = input_data.get("image_paths", [])
+        image_ids = input_data.get("image_ids", [])
+        image_results = []
+        for image_path, image_id in zip(image_paths, image_ids):
+            if os.path.exists(image_path):
+                image_results.append({
+                    "image_id": image_id,
+                    "image_path": image_path,
+                    "status": "processed",
+                    "media_type": "image",
+                })
+            else:
+                logger.error(f"Image file not found: {image_path}")
+                image_results.append({
+                    "image_id": image_id,
+                    "image_path": image_path,
+                    "status": "failed",
+                    "error": "File not found",
+                })
+
+        return {"videos": results, "images": image_results}
 
     async def _process_single_video(self, video_path: str, video_id: str, config: dict) -> dict:
         """Process a single video file."""
-        base_name = os.path.splitext(os.path.basename(video_path))[0]
-
         # Extract metadata (duration, resolution, capture date)
         metadata = self._get_video_metadata(video_path)
+
+        # Compress video for LLM (720p, 800kbps)
+        compressed_path = os.path.join(settings.storage.clips_dir, f"{video_id}_compressed.mp4")
+        self._compress_video(video_path, compressed_path)
 
         # Extract audio track
         audio_path = os.path.join(settings.storage.audio_dir, f"{video_id}.wav")
@@ -67,6 +90,7 @@ class VideoPreprocessNode(WorkflowNode):
         return {
             "video_id": video_id,
             "video_path": video_path,
+            "compressed_path": compressed_path,
             "audio_path": audio_path,
             "thumbnail_path": thumbnail_path,
             "duration": metadata.get("duration"),
@@ -120,6 +144,31 @@ class VideoPreprocessNode(WorkflowNode):
         except Exception as e:
             logger.error(f"ffprobe failed for {video_path}: {e}")
             return {}
+
+    def _compress_video(self, video_path: str, output_path: str):
+        """Compress video to 720p / 800kbps for LLM visual understanding."""
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path,
+            "-vf", "scale=-2:720",
+            "-c:v", "libx264", "-preset", "fast",
+            "-b:v", "800k", "-maxrate", "1200k", "-bufsize", "1600k",
+            "-c:a", "aac", "-b:a", "64k", "-ac", "1",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=300, check=True)
+            compressed_size = os.path.getsize(output_path)
+            original_size = os.path.getsize(video_path)
+            logger.info(
+                f"Compressed video: {original_size / 1024 / 1024:.1f}MB -> "
+                f"{compressed_size / 1024 / 1024:.1f}MB"
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Video compression failed: {e.stderr}")
+            # Fallback: copy original
+            import shutil
+            shutil.copy2(video_path, output_path)
 
     def _extract_audio(self, video_path: str, audio_path: str):
         """Extract audio track as WAV."""

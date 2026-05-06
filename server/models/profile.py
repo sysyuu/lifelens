@@ -25,6 +25,10 @@ class UserProfile(Base):
     occupation: Mapped[Optional[str]] = mapped_column(String(100))
     city: Mapped[Optional[str]] = mapped_column(String(100))
 
+    # User appearance (detected from third-person videos + voiceprint matching)
+    appearance_description: Mapped[Optional[str]] = mapped_column(Text)
+    appearance_photo_path: Mapped[Optional[str]] = mapped_column(String(500))
+
     # Voiceprint embedding (registered during onboarding)
     voiceprint_path: Mapped[Optional[str]] = mapped_column(String(500))
 
@@ -73,7 +77,7 @@ class Interest(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("user_profiles.id"))
 
-    name: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(500))
     confidence: Mapped[float] = mapped_column(Float, default=0.25)
     evidence_count: Mapped[int] = mapped_column(Integer, default=1)
     first_detected: Mapped[date] = mapped_column(Date, default=date.today)

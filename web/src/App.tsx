@@ -5,7 +5,7 @@ import { useApi } from './hooks/useApi';
 import { WorkflowRunData, NodeRunData } from './types';
 import './App.css';
 
-const PROFILE_ID = process.env.REACT_APP_PROFILE_ID || '8e976c98-c61c-4a1c-bccd-70af3ad92b3c';
+const PROFILE_ID = process.env.REACT_APP_PROFILE_ID || '863cdd18-82cb-4ce4-84ed-b74db1a98416';
 const POLL_FAST = 2000;
 const POLL_SLOW = 5000;
 
@@ -125,7 +125,7 @@ function App() {
               </option>
             ))}
           </select>
-          {workflowRuns.length > 1 && (
+          {workflowRuns.length > 0 && (
             <>
               <label style={{ fontSize: 13, color: '#6b7280' }}>运行：</label>
               <select
@@ -138,11 +138,20 @@ function App() {
                   fontSize: 13,
                 }}
               >
-                {workflowRuns.map((r, i) => (
-                  <option key={r.id} value={i}>
-                    #{i + 1} - {r.status} ({r.started_at?.slice(11, 19) || 'N/A'})
-                  </option>
-                ))}
+                {workflowRuns.map((r, i) => {
+                  const videoCount = r.node_runs?.find(nr => nr.node_id === '1.1_video_preprocess')
+                    ?.input_data?.video_paths?.length;
+                  const dateLabel = r.target_date || '未知日期';
+                  const timeLabel = r.started_at?.slice(5, 16).replace('T', ' ') || 'N/A';
+                  const statusLabel = r.status === 'running' ? '运行中' :
+                                     r.status === 'completed' ? '已完成' :
+                                     r.status === 'failed' ? '失败' : r.status;
+                  return (
+                    <option key={r.id} value={i}>
+                      #{workflowRuns.length - i} {timeLabel} [{statusLabel}]{videoCount ? ` ${videoCount}个视频` : ''} ({dateLabel})
+                    </option>
+                  );
+                })}
               </select>
             </>
           )}

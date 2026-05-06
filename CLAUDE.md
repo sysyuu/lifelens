@@ -202,6 +202,37 @@ docker compose up --build -d
 - Rerun button in NodeDetail existed but gave no visual feedback on click
 - Added success/error status indicators after rerun completes
 
+### Gallery Import by Date (app/src/screens/UploadScreen.tsx)
+- Default mode is "按日期导入": calendar picker → scan all photos+videos from that date via `expo-media-library`
+- Videos >60 seconds are filtered out and counted separately (camera clips are 15s, so >60s = phone recordings)
+- Parallel upload with CONCURRENCY=5: photos via `POST /api/upload/image`, videos via `POST /api/upload/video`
+- Stats box shows: X 张图片 + Y 个视频 uploaded, Z 个视频已过滤
+- "手动选择视频" tab still available as fallback (expo-image-picker)
+- On batch completion navigates to Home tab
+- `expo-media-library` requires native pod: `LANG=en_US.UTF-8 pod install` in `app/ios/`
+
+### Image Pipeline Support (server-side)
+- `POST /api/upload/image` endpoint: saves to `frames_dir`, creates `UploadedVideo` record with `status="uploaded_image"`
+- `workflow_service.py` separates batch media into `videos` (status≠"uploaded_image") and `images` (status="uploaded_image")
+- Injects `image_paths` and `image_ids` into pipeline initial data
+- Node 1.1 (`video_preprocess.py`): passes images through without FFmpeg, returns `{"videos": [...], "images": [...]}`
+- Node 1.2 (`visual_understanding.py`): added `_process_single_image()` — sends image as base64 (correct MIME type) to Gemini, returns `image_results` alongside `visual_results`
+- Node 2.1 (`event_structuring.py`): appends image analysis after video segments in the LLM prompt
+- Active batches API returns `image_count` and `pure_video_count` fields
+- Home screen processing card shows "X 张图片 + Y 个视频正在处理" when images are present
+
+### Onboarding — Voice Print Step Added
+- Onboarding is now two steps: info form → voice recording
+- Step 2: displays a random reading text, user records audio with start/stop controls
+- Uses `Audio.RecordingOptionsPresets.HIGH_QUALITY` (iOS `kAudioFormatMPEG4AAC` constant, not the string `'aac'`)
+- Voiceprint is uploaded after profile creation; non-blocking (profile still created if upload fails)
+- "跳过，直接开始" button allows skipping the recording step
+
+### iOS Build — Bundle ID
+- Bundle ID changed from `com.anonymous.app` / `com.lifelens.app` to `com.peiyinlin.lifelens`
+- Apple Personal Team provisioning requires globally unique bundle IDs
+- Use Release build to embed JS bundle without Metro: `npx expo run:ios --configuration Release`
+
 ## Known Issues / Pending Work
 
 ### 1. Diary Detail Page — Minor UI Gaps
@@ -209,7 +240,13 @@ docker compose up --build -d
 - `related_person_ids` not displayed on event cards
 - Video clips cannot be played (Modal only shows static images)
 
-### 2. Pending Batch Not Processed
+### 2. Onboarding "创建失败 Network Error"
+- After recording succeeds, `appApi.createProfile()` fails with Network Error over 5G/cellular
+- Likely cause: iOS App Transport Security (ATS) blocking HTTP connections to `14.103.43.132:8000`
+- Fix needed: add `NSAppTransportSecurity` exception in `app/ios/app/Info.plist` for the cloud server IP
+- Workaround: user already has a profile ID stored — can skip onboarding by going back
+
+### 3. Pending Batch Not Processed
 - Batch `98eba46c` (20 videos) is in `pending` status — was uploaded but Celery task may not have been dispatched
 
 ## Cloud Deployment (火山引擎)
